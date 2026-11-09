@@ -1,118 +1,280 @@
-# Profitability Command · Segment 3
+# Profitability Command Segment 3
 
-Dashboard profitabilitas Segmen 3 dengan login Firebase dan data **realtime dari Google Sheets**.
+Dashboard profitabilitas Segmen 3 berbasis HTML dan JavaScript, dengan autentikasi Firebase dan sinkronisasi otomatis dari Google Sheets ke Cloud Firestore.
 
-```
-Google Sheets ──(Apps Script, akun "Sync")──▶ Firestore ──(listener realtime)──▶ Dashboard di GitHub Pages
-  edit angka          ±1–2 menit                datasets/segment3-ytd2026          login email + password
-```
+## Repository dan halaman web
 
-- Halaman: `https://nandar0503.github.io/dashboard_performance/dashboard_profitability_govseg3_2026.html` (URL sama seperti sebelumnya).
-- File HTML **tidak berisi data**. Angka hanya diambil dari Firestore setelah login dengan akun berperan aktif.
-- Setiap perubahan di Google Sheets otomatis dikirim ke Firestore, dan semua dashboard yang sedang terbuka ikut ter-update tanpa reload. Status terlihat di chip **● Live** di bagian atas.
+- Repository: https://github.com/govsegment3/dashboard-profitability
+- URL GitHub Pages setelah diaktifkan: https://govsegment3.github.io/dashboard-profitability/
+- Halaman dashboard: https://govsegment3.github.io/dashboard-profitability/dashboard_profitability_govseg3_2026.html
 
-## Isi repo
+Status deployment dapat diperiksa melalui tab **Actions** dan **Settings → Pages** pada repository.
+
+## Alur data
+
+1. Pengguna memperbarui spreadsheet sumber.
+2. Apps Script membaca data dan membentuk dataset dashboard.
+3. Dataset dikirim ke Cloud Firestore jika isinya berubah.
+4. Listener Firestore pada web menerima pembaruan.
+5. Dashboard memperbarui tampilan tanpa refresh halaman.
+
+### Mekanisme sinkronisasi
+
+- **Edit manual:** trigger langsung mencoba menjalankan sinkronisasi.
+- **Pemeriksaan cadangan:** berjalan setiap satu menit untuk memeriksa perubahan, termasuk hasil rumus atau impor.
+- **Deteksi perubahan:** hash dihitung dari isi dataset tanpa menyertakan waktu `generatedAt`, sehingga data yang sama tidak dikirim berulang.
+- **Pencegahan proses bersamaan:** pengiriman menggunakan script lock.
+
+Pada pengujian lokal, edit manual tampil di dashboard sekitar lima detik. Durasi ini bukan jaminan; waktu aktual bergantung pada antrean Apps Script, ukuran data, jaringan, dan waktu pembaruan rumus atau impor.
+
+Pembaruan dari rumus atau impor baru dapat dibaca setelah hasilnya tersedia di spreadsheet.
+
+## Struktur project
 
 | File | Fungsi |
 |---|---|
-| `dashboard_profitability_govseg3_2026.html` | Portal login + dashboard (menggantikan file lama) |
-| `firebase-config.js` | Konfigurasi Web App Firebase. **Wajib diisi** (apiKey, messagingSenderId, appId) |
-| `index.html` | Mengalihkan ke portal |
-| `firestore.rules` | Aturan keamanan Firestore (peran, akun Sync, validasi dataset, audit) |
-| `apps-script/Code.gs`, `apps-script/appsscript.json` | Skrip sinkronisasi untuk Google Sheets |
-| `firebase.json`, `.firebaserc` | Untuk deploy rules lewat Firebase CLI (opsional) |
+| `index.html` | Mengalihkan pengunjung ke halaman dashboard |
+| `dashboard_profitability_govseg3_2026.html` | Halaman login, visualisasi, dan listener pembaruan Firestore |
+| `firebase-config.js` | Konfigurasi aplikasi web Firebase |
+| `firestore.rules` | Aturan akses profil pengguna, dataset, dan audit |
+| `apps-script/Code.gs` | Pembacaan spreadsheet, pembentukan dataset, dan sinkronisasi |
+| `apps-script/appsscript.json` | Manifest Apps Script |
+| `firebase.json` | Konfigurasi Firebase CLI |
+| `.firebaserc` | Referensi project untuk Firebase CLI |
+| `README.md` | Dokumentasi pemasangan dan pengoperasian |
 
----
+## Persiapan Firebase
 
-## A. Firebase (sekali saja)
+Gunakan project Firebase yang dikelola untuk deployment ini. Seluruh konfigurasi web, Apps Script, dan Firebase CLI harus menunjuk ke project tujuan yang sama.
 
-1. **Authentication → Sign-in method → Email/Password → Enable.**
-2. **Authentication → Settings → Authorized domains → Add domain:** `nandar0503.github.io`.
-3. **Firestore Database → Create database** (production mode, lokasi `asia-southeast2`).
-4. **Firestore → Rules:** salin seluruh isi `firestore.rules`, lalu **Publish**.
-   (Atau lewat CLI: `firebase deploy --only firestore:rules`.)
-5. **Project settings → General → Your apps → Add app → Web (</>)**. Salin `apiKey`, `messagingSenderId`, `appId` ke `firebase-config.js`.
+### 1. Aktifkan autentikasi
 
-### Akun Director pertama
-1. **Authentication → Users → Add user** (email + password Anda). Salin **User UID**.
-2. **Firestore → Start collection `users`** → Document ID = UID tersebut:
+Pada Firebase Console:
 
-| Field | Tipe | Nilai |
-|---|---|---|
-| `name` | string | Nama Anda |
-| `email` | string | Email Anda |
-| `role` | string | `Director` |
-| `active` | boolean | `true` |
+1. Buka **Authentication → Sign-in method**.
+2. Aktifkan **Email/Password**.
+3. Pada **Authentication → Settings → Authorized domains**, tambahkan hostname deployment:
+   `govsegment3.github.io`.
 
-### Akun Sync (untuk Google Sheets)
-Login ke portal sebagai Director → **14 · Kelola Pengguna → Tambah pengguna**:
-nama `Google Sheets Sync`, email mis. `sync.profitability@domain-anda`, password kuat, peran **Sync**.
-Akun ini hanya bisa menulis dataset; tidak bisa membuka dashboard.
+Untuk pengujian lokal, tambahkan hostname lokal jika diperlukan oleh metode autentikasi yang digunakan.
 
-## B. GitHub Pages
+### 2. Siapkan Cloud Firestore
 
-Ganti isi repo `dashboard_performance` dengan file di folder ini, lalu commit:
+1. Buka **Firestore Database**.
+2. Buat database jika belum tersedia.
+3. Gunakan **Standard edition** dan database **`(default)`**.
+4. Pilih lokasi yang sesuai saat pembuatan.
+5. Gunakan **Production mode** jika diminta.
+6. Salin isi `firestore.rules` ke tab **Rules**, lalu klik **Publish**.
 
-```bash
-git clone https://github.com/nandar0503/dashboard_performance
-cd dashboard_performance
-# salin semua file dari folder ini ke sini (timpa file lama)
-git add -A
-git commit -m "Portal login Firebase + data realtime dari Google Sheets"
-git push
-```
+Jika database sudah tersedia, gunakan database tersebut tanpa membuat duplikat.
 
-> **Penting:** file lama berisi seluruh angka keuangan dan masih tersimpan di riwayat commit publik.
-> Untuk menghapusnya, buat ulang repo atau ganti riwayat dengan branch baru:
-> ```bash
-> git checkout --orphan bersih && git add -A && git commit -m "Portal tanpa data"
-> git branch -D main && git branch -m main && git push -f origin main
-> ```
+Mengunggah `firestore.rules` ke GitHub tidak otomatis memasangnya ke Firebase.
 
-## C. Google Sheets
+### 3. Siapkan akun pengguna
 
-1. Buka spreadsheet → **Extensions → Apps Script**.
-2. Ganti isi `Code.gs` dengan `apps-script/Code.gs`.
-   Untuk `appsscript.json`: **Project Settings → centang "Show appsscript.json"**, lalu ganti isinya.
-3. Simpan, kembali ke spreadsheet, **muat ulang**. Menu **Profitability Sync** muncul.
-4. **Profitability Sync → 1. Atur koneksi Firebase**: isi Web API Key, email & password akun Sync. Setujui izin akses saat diminta.
-5. **Profitability Sync → Sinkronkan sekarang**: data pertama terkirim, dashboard terisi.
-6. **Profitability Sync → 2. Aktifkan sinkron otomatis**: selanjutnya setiap perubahan terkirim dalam ±1–2 menit.
+Project menggunakan akun manusia untuk dashboard dan akun khusus untuk sinkronisasi.
 
-> **Penting:** ubah akses berbagi spreadsheet menjadi **Restricted** (hanya orang tertentu).
-> Jika link spreadsheet bisa dibuka siapa saja, login di dashboard tidak melindungi datanya.
-
-### Struktur sheet yang dibaca
-Skrip membaca format yang sudah ada, jadi tidak perlu template baru:
-
-| Sheet | Yang dibaca |
+| Jenis akun | Fungsi |
 |---|---|
-| `Summary` | Tabel "Layanan": revenue & direct cost SAP/OPS per pelanggan (angka resmi) |
-| `Breakdown Pareto` | 5 blok "Beban …" per pelanggan + tabel total per kategori |
-| `Rekap SAP S3` | Baris pertama = bulan (format tanggal) + "Grand Total"; dipakai untuk tren bulanan, depresiasi, catatan |
+| Director | Membuka dashboard dan mengelola pengguna |
+| Sync | Digunakan Apps Script untuk mengirim dataset dan audit |
 
-- **Menambah bulan:** sisipkan kolom tanggal baru (mis. Okt-26) sebelum "Grand Total" di `Rekap SAP S3`. Dashboard otomatis menjadi "YTD Jan–Okt".
-- **Label tertukar** di `Summary` terdeteksi otomatis dengan mencocokkan angka ke ledger & Pareto, lalu dikoreksi di dashboard. Saat ini terdeteksi 4 pasang: Kementerian HAM ↔ Dirjen Pajak, Kejagung ↔ Ditjen Minerba, Universitas Terbuka ↔ BP Tapera, Al Azhar ↔ Universitas Indonesia.
-- Catatan di kolom setelah "Grand Total" muncul di modul 11 dan Executive Insights.
-- Riwayat sinkron tercatat di sheet **Log Sinkronisasi** (dibuat otomatis) dan di **Audit Trail** dashboard.
+Akun dibuat pada **Authentication → Users**.
 
-## Peran & akses
+Setiap akun memerlukan profil pada collection `users`, dengan **Document ID sama persis dengan UID akun Authentication**.
 
-| Peran | Dashboard | Ubah dataset | Audit Trail | Kelola pengguna |
-|---|---|---|---|---|
-| Director | Semua modul | ✓ | ✓ | ✓ |
-| Finance | Semua modul | ✓ | ✓ | – |
-| Business Unit Head / Analyst | 01–10, 12 | – | – | – |
-| Project Manager | 01, 04, 05, 06, 08, 09, 12 | – | – | – |
-| Sync | – (tidak bisa login ke dashboard) | ✓ hanya `segment3-ytd2026` | – | – |
+| Field | Tipe | Keterangan |
+|---|---|---|
+| `name` | string | Nama tampilan |
+| `email` | string | Email akun terkait |
+| `role` | string | Peran yang didukung rules |
+| `active` | boolean | `true` untuk akun aktif |
+
+Untuk akun sinkronisasi, gunakan `role` bernilai `Sync`. Untuk administrator awal, gunakan `Director`.
+
+Jangan memakai Auto-ID untuk dokumen profil dan jangan menyimpan `active` sebagai teks `"true"`.
+
+### 4. Konfigurasi aplikasi web
+
+1. Buka **Project settings → General → Your apps**.
+2. Pilih aplikasi Web yang tersedia, atau daftarkan aplikasi Web baru.
+3. Ambil konfigurasi melalui **SDK setup and configuration → Config**.
+4. Salin nilai konfigurasi ke `firebase-config.js`.
+5. Pertahankan bentuk `window.FIREBASE_CONFIG` yang digunakan dashboard.
+
+Salin konfigurasi lengkap dari project tujuan. Jangan hanya mengganti `projectId` sementara nilai lain masih berasal dari project berbeda.
+
+Konfigurasi Web App Firebase digunakan di browser dan bukan pengganti kontrol akses. Perlindungan data tetap bergantung pada autentikasi dan Firestore Rules.
+
+## Pemasangan Apps Script
+
+### 1. Sesuaikan kode sumber
+
+Pada `apps-script/Code.gs`:
+
+- Pastikan `CFG.PROJECT_ID` menunjuk ke Firebase tujuan.
+- Pastikan `CFG.DATASET_ID` sesuai dengan dokumen yang didengarkan dashboard.
+- Pertahankan mekanisme pengiriman langsung saat edit dan pengecekan berkala.
+
+### 2. Pasang pada spreadsheet sumber
+
+1. Buka spreadsheet sumber.
+2. Pilih **Extensions → Apps Script**.
+3. Ganti seluruh isi `Code.gs` dengan `apps-script/Code.gs` dari repository.
+4. Jangan membungkus kode dengan fungsi bawaan `myFunction()`.
+5. Untuk manifest, buka **Project Settings** dan aktifkan tampilan `appsscript.json`.
+6. Salin isi `apps-script/appsscript.json` ke manifest tersebut.
+7. Simpan perubahan.
+8. Kembali ke spreadsheet dan refresh.
+
+Menu **Profitability Sync** akan muncul pada menu spreadsheet.
+
+Apps Script ini tidak memerlukan deployment sebagai Web App.
+
+### 3. Atur koneksi Firebase
+
+Pilih **Profitability Sync → 1. Atur koneksi Firebase**, lalu masukkan:
+
+- Web API Key Firebase tujuan.
+- Email akun Sync.
+- Password Firebase akun Sync.
+
+Konfigurasi disimpan di **Script Properties**, bukan pada file repository.
+
+Mengganti `Code.gs` atau `firebase-config.js` tidak otomatis mengganti koneksi yang sudah tersimpan di Script Properties.
+
+Editor project Apps Script dapat mengakses konfigurasi tersebut. Batasi akses editor dan gunakan akun Sync khusus.
+
+### 4. Uji pengiriman awal
+
+1. Pilih **Profitability Sync → Sinkronkan sekarang**.
+2. Pastikan muncul pesan pengiriman berhasil.
+3. Periksa dokumen `datasets/segment3-ytd2026` di Firestore.
+4. Pastikan `updatedAt` berubah dan `updatedBy` sesuai akun Sync.
+5. Periksa log sinkronisasi jika terjadi kegagalan.
+
+Login Firebase berhasil belum membuktikan penulisan dataset berhasil.
+
+### 5. Aktifkan sinkronisasi otomatis
+
+1. Pilih **Profitability Sync → 2. Aktifkan sinkron otomatis**.
+2. Buka **Cek status** dan pastikan sinkron otomatis aktif.
+3. Periksa trigger pada Apps Script jika diperlukan.
+
+Trigger berjalan menggunakan akun Google pemasangnya. Akun tersebut harus tetap memiliki akses dan otorisasi yang diperlukan.
+
+Hindari trigger duplikat dari beberapa akun. Trigger milik akun lain perlu diperiksa oleh pemiliknya.
+
+## Spreadsheet yang dibaca
+
+| Sheet | Penggunaan |
+|---|---|
+| `Summary` | Revenue dan direct cost SAP/OPS per pelanggan |
+| `Breakdown Pareto` | Rincian kategori biaya dan total kategori |
+| `Rekap SAP S3` | Tren bulanan, layanan, depresiasi, dan catatan |
+| `Log Sinkronisasi` | Riwayat pengiriman yang ditulis oleh script |
+
+Script membaca data sumber dan menulis log pada `Log Sinkronisasi`. Script tidak menulis ulang data pada tiga sheet sumber tersebut.
+
+Log lama dapat dipangkas untuk membatasi jumlah baris.
+
+Pertahankan nama sheet, susunan kolom, dan format header yang digunakan parser. Perubahan struktur sumber perlu diikuti pemeriksaan kode pembentuk dataset.
+
+Kartu total revenue dihitung dari baris pelanggan pada tabel `Summary`; baris `Grand Total` tidak digunakan sebagai satu-satunya sumber total.
+
+## Menjalankan web secara lokal
+
+1. Buka folder project di VS Code.
+2. Pasang ekstensi **Live Server** jika belum tersedia.
+3. Klik kanan `dashboard_profitability_govseg3_2026.html`.
+4. Pilih **Open with Live Server**.
+5. Login menggunakan akun dashboard yang aktif.
+
+Alamat `127.0.0.1` atau `localhost` hanya mengarah ke komputer yang membukanya. Untuk pengujian dari perangkat lain melalui internet, gunakan URL deployment.
+
+## Deployment GitHub Pages
+
+1. Pastikan file web sudah diekstrak dan berada pada folder sumber deployment.
+2. Letakkan `index.html`, HTML dashboard, dan `firebase-config.js` pada folder yang sesuai.
+3. Commit dan push perubahan ke repository ini.
+4. Buka **Settings → Pages**.
+5. Pilih sumber deployment yang digunakan, misalnya branch `main` dan folder `/ (root)`.
+6. Periksa proses deployment pada tab **Actions**.
+7. Buka URL Pages setelah deployment berhasil.
+
+GitHub Pages tidak mengekstrak ZIP untuk menjalankan file di dalamnya.
+
+### Perbedaan pembaruan kode dan data
+
+| Perubahan | Tindakan |
+|---|---|
+| HTML atau konfigurasi web | Commit, push, dan pastikan deployment selesai |
+| `Code.gs` | Perbarui repository serta salin kode ke Apps Script spreadsheet |
+| Firestore Rules | Perbarui file dan publish ke Firebase atau deploy melalui CLI |
+| Data spreadsheet | Tidak perlu commit atau deployment ulang |
+
+GitHub Pages tidak menjalankan `Code.gs`. Sinkronisasi dijalankan oleh Google Apps Script.
+
+## Pengujian pembaruan otomatis
+
+1. Buka dashboard dengan akun manusia yang aktif.
+2. Pastikan menggunakan dataset resmi, bukan upload pribadi.
+3. Pilih angka yang bisa dibandingkan dengan spreadsheet.
+4. Gunakan pembaruan rutin atau perubahan uji yang diizinkan pengelola.
+5. Jangan menimpa rumus atau mengubah data produksi tanpa izin.
+6. Biarkan dashboard terbuka tanpa refresh dan tanpa sinkron manual.
+7. Periksa log, `updatedAt` Firestore, dan angka terkait pada dashboard.
+8. Jika memakai data uji, pulihkan nilai awal dan pastikan pemulihannya ikut tersinkron.
+
+| Hasil | Makna |
+|---|---|
+| Log `OK` dengan mode `otomatis-edit` | Pengiriman dipicu langsung oleh perubahan |
+| Log `OK` dengan mode `otomatis` | Pengiriman dilakukan pemeriksaan berkala |
+| Firestore berubah dan web ikut berubah | Alur pembaruan otomatis berhasil |
+| Firestore berubah tetapi web tetap | Periksa konfigurasi web, listener, filter, dan mode dataset |
+| Log `GAGAL` | Periksa pesan error sebelum menyimpulkan sinkronisasi berhasil |
+
+Pada mode upload pribadi, pembaruan resmi tidak langsung menimpa tampilan. Gunakan pilihan kembali ke dataset resmi pada modul pengelolaan data.
+
+Chip **Live** menunjukkan status listener, bukan bukti bahwa perubahan spreadsheet sudah berhasil dikirim.
+
+## Keamanan dan privasi
+
+Jangan menyimpan atau mengunggah:
+
+- Password akun dashboard atau akun Sync.
+- Private key atau kredensial service account.
+- Ekspor Script Properties.
+- Dataset keuangan, log berisi data internal, atau cadangan spreadsheet.
+- ZIP lama yang memuat data atau kredensial.
+- Screenshot yang menampilkan password atau informasi internal.
+
+Spreadsheet sumber tetap menggunakan akses **Restricted** sesuai pengelolaan akses organisasi.
+
+Halaman login tidak melindungi data yang sudah tertanam di HTML, ZIP, atau riwayat commit publik. Periksa file dan riwayat repository sebelum publikasi.
+
+Jangan membuka Firestore Rules untuk semua pengguna hanya untuk mengatasi error koneksi.
 
 ## Pemecahan masalah
 
-| Gejala | Penyebab & solusi |
+| Gejala | Pemeriksaan |
 |---|---|
-| "Konfigurasi Firebase tidak ditemukan" | `firebase-config.js` belum diisi atau belum di-push |
-| "Akun belum diaktifkan" | Dokumen `users/{UID}` belum ada / `active` bukan `true` |
-| Log: "Ditolak firestore.rules" | Akun Sync belum punya profil `role: "Sync"` aktif, atau rules belum di-publish |
-| Log: "Login Firebase gagal" | Web API Key / email / password akun Sync salah (menu 1) |
-| Chip "○ Koneksi realtime terputus" | Jaringan terputus; Firestore menyambung ulang otomatis |
-| Data tidak berubah setelah edit | Cek menu **Cek status**; sinkron otomatis menunggu 20 detik setelah edit terakhir |
+| `API_KEY_INVALID` | Periksa nilai `FIREBASE_API_KEY` yang tersimpan di Script Properties dan cocokkan dengan Firebase tujuan |
+| Email atau password salah | Periksa akun Sync pada Authentication project tujuan dan password Firebase-nya |
+| Firestore 403 | Periksa Project ID, UID profil, role, `active`, rules yang dipublikasikan, dan validasi dataset/audit |
+| Konfigurasi web tidak ditemukan | Periksa `firebase-config.js`, lokasi file, dan hasil deployment |
+| Akun belum aktif | Periksa dokumen `users/{UID}` dan tipe boolean `active` |
+| Manual berhasil tetapi otomatis tidak | Periksa trigger, akun pemasang, otorisasi, dan menu Executions |
+| Web masih menampilkan data lama | Periksa project Firebase web, filter, mode upload pribadi, dan error browser |
+| Tidak ada log baru setiap menit | Normal jika isi dataset tidak berubah; periksa Executions untuk memastikan jadwal berjalan |
+| Editor Apps Script terus menampilkan Running | Periksa dialog pada tab spreadsheet yang mungkin menunggu tombol OK |
+| Perubahan rumus/impor terlambat | Pastikan hasil sumber sudah diperbarui; perubahan diperiksa melalui jadwal cadangan |
+
+## Pemeliharaan
+
+- Samakan kode dalam repository dengan kode Apps Script yang berjalan.
+- Uji ulang setelah perubahan struktur spreadsheet, rules, atau konfigurasi Firebase.
+- Periksa kegagalan trigger dan akses akun pemasang secara berkala.
+- Gunakan akun dashboard terpisah untuk setiap pengguna sesuai perannya.
+- Simpan kredensial di tempat yang dikelola pemilik sistem, bukan dalam dokumentasi repository.
